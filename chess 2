@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Buggy Chess 2</title>
+  <style>
+    body { font-family: Arial; text-align: center; background: #f4f4f4; }
+    #board {
+      display: grid;
+      grid-template-columns: repeat(8, 64px);
+      width: 512px;
+      margin: 20px auto;
+      border: 3px solid #222;
+    }
+    .square {
+      width: 64px;
+      height: 64px;
+      font-size: 40px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      cursor: pointer;
+      user-select: none;
+    }
+    .light { background: #f0d9b5; }
+    .dark { background: #b58863; }
+    .selected { box-shadow: inset 0 0 0 4px gold; }
+    .hint { box-shadow: inset 0 0 0 4px rgba(0, 255, 0, 0.45); }
+  </style>
+</head>
+<body>
+  <h1>Buggy Chess 2</h1>
+  <p id="status">White to move</p>
+  <button onclick="resetGame()">Reset</button>
+  <div id="board"></div>
+
+  <script>
+    const icons = {
+      r: "♜", n: "♞", b: "♝", q: "♛", k: "♚", p: "♟",
+      R: "♖", N: "♘", B: "♗", Q: "♕", K: "♔", P: "♙"
+    };
+
+    const start = [
+      ["r","n","b","q","k","b","n","r"],
+      ["p","p","p","p","p","p","p","p"],
+      ["","","","","","","",""],
+      ["","","","","","","",""],
+      ["","","","","","","",""],
+      ["","","","","","","",""],
+      ["P","P","P","P","P","P","P","P"],
+      ["R","N","B","Q","K","B","N","R"]
+    ];
+
+    let board;
+    let selected = null;
+    let currentTurn = "white";
+    let hints = [];
+
+    const boardEl = document.getElementById("board");
+    const statusEl = document.getElementById("status");
+
+    function resetGame() {
+      board = start.map(row => row.slice());
+      selected = null;
+      currentTurn = "white";
+      hints = [];
+      render();
+    }
+
+    function render() {
+      boardEl.innerHTML = "";
+
+      for (let r = 0; r < 8; r++) {
+        for (let c = 0; c < 8; c++) {
+          const cell = document.createElement("div");
+          cell.className = "square " + ((r + c) % 2 ? "dark" : "light");
+
+          if (selected && selected.r === r && selected.c === c) {
+            cell.classList.add("selected");
+          }
+
+          if (hints.some(h => h.r === r && h.c === c)) {
+            cell.classList.add("hint");
+          }
+
+          cell.textContent = icons[board[r][c]] || "";
+          cell.onclick = () => handleClick(r, c);
+          boardEl.appendChild(cell);
+        }
+      }
+
+      statusEl.textContent = currentTurn === "white" ? "White to move" : "Black to move";
+    }
+
+    function handleClick(r, c) {
+      const piece = board[r][c];
+
+      if (!selected) {
+        if (!piece) return;
+
+        if (pieceColor(piece) !== currentTurn) return;
+
+        selected = { r, c };
+        hints = getMoves(r, c);
+      } else {
+        const from = selected;
+        const moving = board[from.r][from.c];
+
+        if (isLegalMove(moving, from.r, from.c, r, c)) {
+          board[r][c] = moving;
+          board[from.r][from.c] = "";
+
+          currentTurn = currentTurn === "white" ? "black" : "white";
+        }
+
+        selected = null;
+        hints = [];
+      }
+
+      render();
+    }
+
+    function pieceColor(piece) {
+      return piece === piece.toUpperCase() ? "white" : "black";
+    }
+
+    function getMoves(r, c) {
+      const moves = [];
+      const piece = board[r][c];
+
+      for (let rr = 0; rr < 8; rr++) {
+        for (let cc = 0; cc < 8; cc++) {
+          if (isLegalMove(piece, r, c, rr, cc)) {
+            moves.push({ r: rr, c: cc });
+          }
+        }
+      }
+
+      return moves;
+    }
+
+    function isLegalMove(piece, fromR, fromC, toR, toC) {
+      if (!piece) return false;
+      if (fromR === toR && fromC === toC) return false;
+
+      const target = board[toR][toC];
+
+      // BUG: This prevents capturing the opposite piece if it is the same type,
+      // like white knight cannot capture black knight.
+      if (target && target.toLowerCase() === piece.toLowerCase()) {
+        return false;
+      }
+
+      const dr = toR - fromR;
+      const dc = toC - fromC;
+      const absR = Math.abs(dr);
+      const absC = Math.abs(dc);
+
+      switch (piece.toLowerCase()) {
+        case "p":
+          return pawnMove(piece, fromR, fromC, toR, toC);
+
+        case "r":
+          // BUG: Rook can move diagonally by one square.
+          return fromR === toR || fromC === toC || (absR === 1 && absC === 1);
+
+        case "b":
+          // BUG: Bishop can move straight forward one square.
+          return absR === absC || (absC === 0 && absR === 1);
+
+        case "q":
+          // BUG: Queen cannot move diagonally more than 3 squares.
+          if (absR === absC && absR > 3) return false;
+          return fromR === toR || fromC === toC || absR === absC;
+
+        case "n":
+          // BUG: Knight can also move like a king.
+          return (absR === 2 && absC === 1) ||
+                 (absR === 1 && absC === 2) ||
+                 (absR <= 1 && absC <= 1);
+
+        case "k":
+          // BUG: King cannot move diagonally.
+          return absR + absC === 1;
+
+        default:
+          return false;
+      }
+    }
+
+    function pawnMove(piece, fromR, fromC, toR, toC) {
+      const white = piece === piece.toUpperCase();
+      const dir = white ? -1 : 1;
+      const startRow = white ? 6 : 1;
+      const target = board[toR][toC];
+
+      // BUG: Pawns can move forward into occupied squares.
+      if (fromC === toC && toR === fromR + dir) {
+        return true;
+      }
+
+      // BUG: Pawns can move three squares from starting row.
+      if (fromR === startRow && fromC === toC && toR === fromR + dir * 3) {
+        return true;
+      }
+
+      // BUG: Pawns capture sideways instead of diagonally.
+      if (target && toR === fromR && Math.abs(toC - fromC) === 1) {
+        return true;
+      }
+
+      return false;
+    }
+
+    resetGame();
+  </script>
+</body>
+</html>
